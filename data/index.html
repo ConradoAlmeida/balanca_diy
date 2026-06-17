@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Balanca DIY</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Balanca DIY</h1>
+            <div class="status-bar">
+                <span id="connectionStatus" class="status-dot disconnected"></span>
+                <span id="wifiStatus">Conectando...</span>
+                <span id="weightStatus" class="status-badge">Peso: -- kg</span>
+                <span id="batteryStatus" class="status-badge">🔋 --%</span>
+            </div>
+        </header>
+
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="usage">Funções de Uso</button>
+            <button class="tab-btn" data-tab="settings">Configurações</button>
+        </nav>
+
+        <main>
+            <!-- TAB: Funções de Uso -->
+            <section id="tab-usage" class="tab-content active">
+                <div class="weight-display">
+                    <div class="weight-value" id="currentWeight">--</div>
+                    <div class="weight-unit">kg</div>
+                    <div id="tareProgress" class="tare-progress hidden">
+                        <div class="tare-progress-bar" id="tareProgressBar"></div>
+                        <span id="tareProgressText">Tarando...</span>
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <button id="btnTare" class="btn btn-primary">Tara</button>
+                    <button id="btnClearHistory" class="btn btn-secondary">Limpar Histórico</button>
+                    <button id="btnToggleAutoSave" class="btn btn-secondary">Auto-Save: ON</button>
+                </div>
+
+                <div class="history-section">
+                    <h2>Histórico de Pesos</h2>
+                    <div class="history-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Peso (kg)</th>
+                                    <th>Tempo (ms)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTableBody">
+                                <tr><td colspan="3">Nenhum registro</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="history-summary">
+                        <span>Total de registros: <strong id="historyCount">0</strong></span>
+                    </div>
+                </div>
+
+                <div class="info-cards">
+                    <div class="card">
+                        <h3>Fator de Calibração</h3>
+                        <p id="displayFactor">--</p>
+                    </div>
+                    <div class="card">
+                        <h3>Offset (Tara)</h3>
+                        <p id="displayOffset">--</p>
+                    </div>
+                    <div class="card">
+                        <h3>Bateria</h3>
+                        <p id="displayBattery">--</p>
+                    </div>
+                    <div class="card">
+                        <h3>WiFi</h3>
+                        <p id="displayWifi">--</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB: Configurações -->
+            <section id="tab-settings" class="tab-content">
+                <div class="config-section">
+                    <h2>Calibração</h2>
+                    <div class="form-group">
+                        <label for="knownWeight">Peso Conhecido (kg)</label>
+                        <input type="number" id="knownWeight" step="0.01" min="0" placeholder="Ex: 1.000">
+                    </div>
+                    <button id="btnCalibrate" class="btn btn-primary">Calibrar</button>
+                </div>
+
+                <div class="config-section">
+                    <h2>Fator Manual</h2>
+                    <div class="form-group">
+                        <label for="manualFactor">Fator de Calibração</label>
+                        <input type="number" id="manualFactor" step="0.01" min="0" placeholder="Ex: 420.00">
+                    </div>
+                    <button id="btnSetFactor" class="btn btn-primary">Definir Fator</button>
+                </div>
+
+                <div class="config-section">
+                    <h2>Rede WiFi</h2>
+                    <div class="config-info">
+                        <p><strong>Modo STA:</strong> <span id="cfgStaSSID">WMTF_Network</span></p>
+                        <p><strong>Modo AP:</strong> <span id="cfgApSSID">BalancaDIY</span></p>
+                        <p><strong>IP STA:</strong> <span id="cfgStaIP">--</span></p>
+                        <p><strong>IP AP:</strong> <span id="cfgApIP">--</span></p>
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <h2>Ações</h2>
+                    <button id="btnResetCalibration" class="btn btn-danger">Resetar Calibração</button>
+                    <a href="/update" class="btn btn-secondary" target="_blank">OTA Update</a>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Balanca DIY &copy; 2026 | ESP32 DevKit V4</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
