@@ -63,9 +63,9 @@
 // Scale (HX711) Configuration
 // ============================================================
 #define HX711_GAIN          128
-#define HX711_SAMPLE_RATE   10     // samples per second for display
-#define HX711_TARE_SAMPLES  10     // number of samples for tare (~1 s at 10 SPS)
-#define HX711_MOVING_AVG    40     // moving average window (~4 s at 10 SPS)
+#define HX711_SAMPLE_RATE   8     // samples per second for display
+#define HX711_TARE_SAMPLES  30     // number of samples for tare (~1 s at 10 SPS)
+#define HX711_MOVING_AVG    30     // moving average window (~4 s at 10 SPS)
 #define WEIGHT_DISPLAY_DEADBAND_G 2.0f // Ignore display changes smaller than 2 g
 #define WEIGHT_ZERO_DEADBAND_G 2.0f // Show zero between -2 g and +2 g
 
