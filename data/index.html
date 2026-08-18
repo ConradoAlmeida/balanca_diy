@@ -13,7 +13,7 @@
             <div class="status-bar">
                 <span id="connectionStatus" class="status-dot disconnected"></span>
                 <span id="wifiStatus">Conectando...</span>
-                <span id="weightStatus" class="status-badge">Peso: -- kg</span>
+                <span id="weightStatus" class="status-badge">Peso: -- g</span>
                 <span id="batteryStatus" class="status-badge">🔋 --%</span>
             </div>
         </header>
@@ -28,7 +28,7 @@
             <section id="tab-usage" class="tab-content active">
                 <div class="weight-display">
                     <div class="weight-value" id="currentWeight">--</div>
-                    <div class="weight-unit">kg</div>
+                    <div class="weight-unit">g</div>
                     <div id="tareProgress" class="tare-progress hidden">
                         <div class="tare-progress-bar" id="tareProgressBar"></div>
                         <span id="tareProgressText">Tarando...</span>
@@ -36,9 +36,10 @@
                 </div>
 
                 <div class="controls">
-                    <button id="btnTare" class="btn btn-primary">Tara</button>
+                    <button id="btnRecord" class="btn btn-primary">Registrar Medição (A)</button>
+                    <button id="btnTare" class="btn btn-primary">Tara (A longo)</button>
+                    <button id="btnNextPage" class="btn btn-secondary">Próxima Página (B)</button>
                     <button id="btnClearHistory" class="btn btn-secondary">Limpar Histórico</button>
-                    <button id="btnToggleAutoSave" class="btn btn-secondary">Auto-Save: ON</button>
                 </div>
 
                 <div class="history-section">
@@ -48,7 +49,7 @@
                             <thead>
                                 <tr>
                                     <th>#</th>
-                                    <th>Peso (kg)</th>
+                                    <th>Peso (g)</th>
                                     <th>Tempo (ms)</th>
                                 </tr>
                             </thead>

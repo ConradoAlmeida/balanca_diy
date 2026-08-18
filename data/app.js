@@ -1,6 +1,5 @@
 let ws = null;
 let reconnectTimer = null;
-let autoSaveEnabled = true;
 
 document.addEventListener('DOMContentLoaded', () => {
     initTabs();
@@ -21,9 +20,21 @@ function initTabs() {
 }
 
 function initButtons() {
+    document.getElementById('btnRecord').addEventListener('click', () => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send('record');
+        }
+    });
+
     document.getElementById('btnTare').addEventListener('click', () => {
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send('tare');
+        }
+    });
+
+    document.getElementById('btnNextPage').addEventListener('click', () => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send('next_page');
         }
     });
 
@@ -32,12 +43,6 @@ function initButtons() {
             ws.send('clear_history');
             document.getElementById('historyTableBody').innerHTML = '<tr><td colspan="3">Nenhum registro</td></tr>';
             document.getElementById('historyCount').textContent = '0';
-        }
-    });
-
-    document.getElementById('btnToggleAutoSave').addEventListener('click', () => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send('toggle_autosave');
         }
     });
 
@@ -102,9 +107,11 @@ function connectWebSocket() {
 }
 
 function updateUI(data) {
+    const weightGrams = data.weight * 1000;
+
     // Weight display
-    document.getElementById('currentWeight').textContent = data.weight.toFixed(2);
-    document.getElementById('weightStatus').textContent = 'Peso: ' + data.weight.toFixed(2) + ' kg';
+    document.getElementById('currentWeight').textContent = weightGrams.toFixed(0);
+    document.getElementById('weightStatus').textContent = 'Peso: ' + weightGrams.toFixed(0) + ' g';
 
     // Tare progress
     const tareProgress = document.getElementById('tareProgress');
@@ -151,10 +158,6 @@ function updateUI(data) {
     document.getElementById('cfgStaIP').textContent = data.wifiConnected ? data.staIP : '--';
     document.getElementById('cfgApIP').textContent = data.apIP;
 
-    // Auto-save button
-    autoSaveEnabled = data.autoSave;
-    document.getElementById('btnToggleAutoSave').textContent = 'Auto-Save: ' + (autoSaveEnabled ? 'ON' : 'OFF');
-
     // History count
     document.getElementById('historyCount').textContent = data.historyCount;
 
@@ -164,7 +167,7 @@ function updateUI(data) {
         tbody.innerHTML = '';
         data.history.forEach((entry, index) => {
             const row = document.createElement('tr');
-            row.innerHTML = '<td>' + (index + 1) + '</td><td>' + entry.weight.toFixed(2) + '</td><td>' + entry.time + '</td>';
+            row.innerHTML = '<td>' + (index + 1) + '</td><td>' + (entry.weight * 1000).toFixed(0) + '</td><td>' + entry.time + '</td>';
             tbody.appendChild(row);
         });
     }
