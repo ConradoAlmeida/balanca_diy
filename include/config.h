@@ -9,7 +9,7 @@
 #define HX711_DOUT  23
 #define HX711_SCK   22
 
-// OLED Display (I2C 0.96" SSD1306)
+// OLED Display (SSD1306, hardware I2C)
 #define OLED_SDA    21
 #define OLED_SCL    19
 #define OLED_ADDR   0x3C
@@ -27,6 +27,7 @@
 #define BATTERY_SAMPLES     20      // ADC samples for averaging
 #define BATTERY_FULL_VOLT   4.2f    // Voltage at 100%
 #define BATTERY_EMPTY_VOLT  3.0f    // Voltage at 0%
+#define BATTERY_LOW_VOLT    3.3f    // Visual low-battery alarm threshold
 #define BATTERY_READ_INTERVAL 5000  // ms between battery readings
 
 // ============================================================
@@ -63,8 +64,10 @@
 // ============================================================
 #define HX711_GAIN          128
 #define HX711_SAMPLE_RATE   10     // samples per second for display
-#define HX711_TARE_SAMPLES  30     // number of samples for tare
-#define HX711_MOVING_AVG    10     // moving average window
+#define HX711_TARE_SAMPLES  10     // number of samples for tare (~1 s at 10 SPS)
+#define HX711_MOVING_AVG    40     // moving average window (~4 s at 10 SPS)
+#define WEIGHT_DISPLAY_DEADBAND_G 2.0f // Ignore display changes smaller than 2 g
+#define WEIGHT_ZERO_DEADBAND_G 2.0f // Show zero between -2 g and +2 g
 
 // Default calibration (must be calibrated for your load cell)
 #define HX711_DEFAULT_FACTOR  420.0f
@@ -72,37 +75,33 @@
 
 // Weight history
 #define WEIGHT_HISTORY_MAX    50   // max entries in weight history
-#define WEIGHT_HISTORY_INTERVAL 5000  // ms between auto-saves
 
 // ============================================================
 // OLED Display
 // ============================================================
-#define OLED_UPDATE_INTERVAL  200    // ms between display updates
-#define OLED_SCREEN_TIMEOUT   30000  // ms before screen sleeps (0 = disabled)
+#define OLED_UPDATE_INTERVAL  200    // ms between OLED1 updates
+#define OLED_SCREEN_TIMEOUT   0      // ms before screen sleeps (0 = disabled)
 #define OLED_CONTRAST         255
 
-// Display pages (cycled with BUTTON_B short press)
+// OLED pages (cycled with BUTTON_B short press)
 #define OLED_PAGE_WEIGHT      0
 #define OLED_PAGE_HISTORY     1
-#define OLED_PAGE_TARE        2
+#define OLED_PAGE_BATTERY     2
 #define OLED_PAGE_MAX         3
 
 // ============================================================
 // Button Configuration
 // ============================================================
 #define BUTTON_DEBOUNCE       50     // ms debounce time
-#define BUTTON_LONG_PRESS     3000   // ms to consider long press
-#define BUTTON_DOUBLE_CLICK   400    // ms window for double click
+#define BUTTON_A_LONG_PRESS   1000   // ms before Button A starts tare
+#define BUTTON_B_LONG_PRESS   2000   // ms before Button B clears history
 
 // Button A actions
-// Short press: Tare
-// Long press: Reset calibration to defaults
-// Double click: Toggle auto-save weight history
+// Short press: Tare the scale
+// Long press: Tare the scale
 
 // Button B actions
-// Short press: Cycle OLED display page
-// Long press: Toggle WiFi AP mode / connect to STA
-// Double click: Show IP on OLED
+// Short press: Cycle OLED pages (weight, history, battery)
 
 // ============================================================
 // Persistent Storage (Preferences)
@@ -111,7 +110,6 @@
 #define PREF_OFFSET_KEY     "offset"
 #define PREF_FACTOR_KEY     "factor"
 #define PREF_WIFI_MODE_KEY  "wifi_mode"  // 0=AP, 1=STA, 2=APSTA
-#define PREF_AUTO_SAVE_KEY  "auto_save"  // auto-save weight history
 
 // ============================================================
 // System
