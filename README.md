@@ -1,17 +1,17 @@
 # Balanca DIY
 
-Balança digital baseada em ESP32 DevKit V4 com célula de carga HX711, display OLED 0.96" e interface web.
+Balança digital baseada em ESP32 DevKit V4 com célula de carga HX711, tela OLED 0.96" e interface web.
 
 ## Funcionalidades
 
 - **Pesagem em tempo real** com filtro de média móvel
-- **Tara** com barra de progresso no OLED e na web
-- **Histórico de pesos** com auto-save configurável
+- **Tara** por pressão longa no botão A, com indicação no OLED e na web
+- **Histórico de pesos** registrado manualmente pelo clique curto do botão A
 - **Calibração** via web ou botão físico
-- **Display OLED 0.96"** com 3 páginas (peso, histórico, tara)
+- **Tela OLED 0.96"** com páginas de peso, histórico e bateria
 - **Interface web** com WebSocket em tempo real (2 abas: Uso e Configurações)
 - **WiFi dual mode**: STA (conecta a rede existente) + AP (ponto de acesso próprio)
-- **Dois botões** com ações de curto/longo/duplo clique
+- **Dois botões** para registro, tara e navegação das páginas da OLED
 - **OTA Update** via web com página customizada elegante
 - **Alimentação por bateria Li-ion 1S** com módulo IP5306 e USB Type-C
 
@@ -28,6 +28,7 @@ Balança digital baseada em ESP32 DevKit V4 com célula de carga HX711, display 
 | Módulo de carga | IP5306 (1S Li-ion, 5V boost) | 1 |
 | Bateria | Li-ion 18650 (1S, 3.7V) | 1 |
 | Conector | USB Type-C fêmea (com cabo, soldado) | 1 |
+| Chave | Liga-desliga SPST | 1 |
 | Resistores CC | 5.1kΩ 1% (obrigatório para USB-C PD) | 2 |
 | Resistores Divisor | 100kΩ 1% (monitoramento de bateria) | 2 |
 
@@ -37,8 +38,8 @@ Balança digital baseada em ESP32 DevKit V4 com célula de carga HX711, display 
 |------|--------|---------|
 | 23 | HX711 DOUT | Dados do ADC (input) |
 | 22 | HX711 SCK | Clock do ADC (output) |
-| 21 | OLED SDA | I2C data |
-| 19 | OLED SCL | I2C clock |
+| 21 | OLED SDA | I2C hardware data |
+| 19 | OLED SCL | I2C hardware clock |
 | 34 | ADC Battery | Monitor de tensão da bateria (input only) |
 | 4 | Botão A | Uso geral (pull-up interno) |
 | 15 | Botão B | Funções extras (pull-up interno) |
@@ -70,7 +71,7 @@ HX711 Module
 #### OLED 0.96" (SSD1306 I2C)
 
 ```
-OLED Module (4 pinos)
+OLED Module (4 pinos, endereço 0x3C)
 ├── VCC ───────→ 3.3V (ESP32)
 ├── GND ───────→ GND
 ├── SDA ───────→ GPIO 21 (ESP32)
@@ -78,9 +79,10 @@ OLED Module (4 pinos)
 ```
 
 **Notas:**
-- Endereço I2C padrão: `0x3C`
-- O OLED consome ~20mA — alimente pelo 3.3V do ESP32
-- Se o display não for detectado, verifique com um scanner I2C
+- O botão B alterna entre peso, histórico e bateria na mesma tela.
+- O clique curto do botão A registra a medição estável no histórico.
+- Alimente a tela pelo 3.3V do ESP32.
+- Se a tela não for detectada, verifique SDA=21, SCL=19 e a alimentação de 3.3V.
 
 #### Monitoramento de Bateria (ADC)
 
@@ -129,7 +131,7 @@ IP5306 Module
 ├── BAT+ ────────────────────→ Bateria 18650 (+)
 ├── BAT- ────────────────────→ Bateria 18650 (-) / GND
 ├── SYS_OUT (+5V) ───────────→ HX711 VCC
-├── SYS_OUT (+5V) ───────────→ ESP32 VIN (regula para 3.3V interno)
+├── SYS_OUT (+5V) ──→ chave liga-desliga ──→ ESP32 VIN/5V
 ├── GND ─────────────────────→ GND comum
 └── LED indicators ──────────→ Status de carga (4 LEDs)
 
@@ -156,14 +158,16 @@ Carregadores modernos com saída USB-C (como carregadores de celular) usam o pro
 
 **Fluxo de alimentação:**
 ```
-USB-C → IP5306 (carrega bateria) → 5V boost → ESP32 VIN (3.3V regulator) → HX711 VCC
-                                    ↓
-                              Bateria 18650 (backup)
+USB-C → IP5306 (carrega bateria) → SYS_OUT 5V ──→ HX711 VCC
+                                  └─→ chave ──→ ESP32 VIN/5V (regulador 3.3V)
+                                  └─→ Bateria 18650 (backup)
 ```
 
 **Notas importantes:**
 - O ESP32 DevKit V4 tem regulador 3.3V interno — alimente pelo pino `VIN` (5V) ou `5V`
 - O HX711 pode ser alimentado pelo mesmo 5V do IP5306
+- A chave deve ficar em série entre `SYS_OUT/+5V` do IP5306 e `VIN/5V` do ESP32; não interrompa o GND.
+- Com a chave desligada, o ESP32 e as OLEDs ficam sem alimentação, enquanto o HX711 pode continuar ligado pelo ramo próprio de 5V.
 - Todos os GNDs devem estar interligados (ESP32, HX711, IP5306, bateria, USB-C)
 - **Resistores CC (5.1kΩ) são obrigatórios** para carregadores USB-C modernos funcionarem
 - Para o conector USB Type-C: soldar os fios diretamente nos pads do módulo IP5306 e posicionar o conector em local acessível no enclosure
@@ -174,7 +178,7 @@ USB-C → IP5306 (carrega bateria) → 5V boost → ESP32 VIN (3.3V regulator) �
 | 18650 | 2200mAh | ~8-12 horas |
 | 18650 | 3400mAh | ~12-18 horas |
 
-*Consumo típico: ESP32 + WiFi + OLED ≈ 80-120mA*
+*Consumo típico: ESP32 + WiFi + duas OLEDs ≈ 100-140mA*
 
 ### Diagrama Geral
 
@@ -191,7 +195,7 @@ USB-C → IP5306 (carrega bateria) → 5V boost → ESP32 VIN (3.3V regulator) �
 ┌─────────────────────────────────────────────────────┐
 │   IP5306                                            │
 │  (charger/boost)│──→ 5V ──→ HX711 VCC               │
-│                 │──→ 5V ──→ ESP32 VIN               │
+│                 │──→ chave ──→ ESP32 VIN            │
 │  BAT+ ── 18650  │──→ Divisor (100k+100k) ──→ GPIO 34│
 │  BAT- ── GND    │                                   │
 └─────────────────┘
@@ -201,8 +205,8 @@ USB-C → IP5306 (carrega bateria) → 5V boost → ESP32 VIN (3.3V regulator) �
 │                                                      │
 │  GPIO 23 ←── HX711 DT                               │
 │  GPIO 22 ←→ HX711 SCK                               │
-│  GPIO 21 ←→ OLED SDA                                │
-│  GPIO 19 ←→ OLED SCL                                │
+│  GPIO 21 ←→ OLED SDA (I2C hardware)                │
+│  GPIO 19 ←→ OLED SCL (I2C hardware)                │
 │  GPIO 34 ←── Divisor de Tensão (Bateria)            │
 │  GPIO 4  ←── Botão A (GND)                          │
 │  GPIO 15 ←── Botão B (GND)                          │
@@ -264,25 +268,26 @@ As bibliotecas `ESPAsyncWebServer` + `AsyncTCP` causam **boot loop** (`rst:0x3 S
 
 | Ação | Função |
 |------|--------|
-| Clique curto | Tara (zerar balança) |
-| Clique longo (>3s) | Resetar calibração para padrões |
-| Duplo clique | Ligar/desligar auto-save do histórico |
+| Clique curto | Registrar a medição estável no histórico |
+| Pressão longa (>1s) | Executar tara |
 
-### Botão B (GPIO 15) - Funções Extras
+### Botão B (GPIO 15) - Navegação da OLED
 
 | Ação | Função |
 |------|--------|
-| Clique curto | Ciclar páginas do OLED (peso → histórico → tara) |
-| Clique longo (>3s) | Conectar/desconectar WiFi STA |
-| Duplo clique | Exibir endereço IP no OLED |
+| Clique curto | Ciclar peso, histórico e bateria ao soltar |
+| Pressão longa (>2s) | Limpar todo o histórico |
 
-## Display OLED
+## Displays OLED
 
-| Página | Conteúdo |
-|--------|----------|
-| Peso | Peso atual em kg, status da tara, auto-save |
-| Histórico | Últimos 5 pesos registrados |
-| Tara | Barra de progresso durante taragem |
+| Tela | Conteúdo |
+|------|----------|
+| Peso | Peso atual em gramas, em fonte grande, e estado da tara |
+| Histórico | As 4 últimas medições, em gramas |
+| Bateria | Tensão, percentual e alarme visual de bateria baixa |
+
+A OLED usa o endereço `0x3C` no I2C hardware. O botão B alterna as três páginas na mesma tela.
+O alarme de bateria baixa é visual e é acionado quando a tensão medida fica em `3.3V` ou menos; o projeto não possui buzzer.
 
 ## WiFi
 
@@ -297,8 +302,9 @@ Se o STA falhar, o AP permanece ativo. Acesse a interface web pelo IP exibido no
 
 ### Aba: Funções de Uso
 
-- Peso atual em destaque
-- Botões: Tara, Limpar Histórico, Auto-Save
+- Peso atual em destaque, exibido em gramas
+- Botões: Registrar Medição (A), Tara (A longo), Próxima Página (B) e Limpar Histórico
+- O histórico também é registrado pelo clique curto do botão A
 - Tabela de histórico de pesos
 - Cards informativos (fator, offset, WiFi)
 
@@ -359,12 +365,18 @@ Edite `include/config.h` para ajustar:
 
 // Calibração padrão
 #define HX711_DEFAULT_FACTOR  420.0f
+#define HX711_TARE_SAMPLES    10
+#define HX711_MOVING_AVG      40
+#define WEIGHT_DISPLAY_DEADBAND_G 2.0f
+#define WEIGHT_ZERO_DEADBAND_G 2.0f
 
 // Pins
 #define HX711_DOUT  23
 #define HX711_SCK   22
 #define OLED_SDA    21
 #define OLED_SCL    19
+#define OLED_ADDR   0x3C
+#define BATTERY_LOW_VOLT 3.3f
 #define BUTTON_A    4
 #define BUTTON_B    15
 ```
@@ -372,12 +384,24 @@ Edite `include/config.h` para ajustar:
 ## Calibração
 
 1. Ligue a balança sem peso
-2. Pressione botão A (curto) para tarar
+2. Mantenha o botão A pressionado por mais de 3 segundos para tarar
 3. Coloque um peso conhecido na balança
 4. Acesse a web → Configurações → Calibração
-5. Informe o peso conhecido e clique em "Calibrar"
+5. Informe o peso conhecido em kg e clique em "Calibrar"
 
 Ou via WebSocket: envie `calibrate:<peso>` (ex: `calibrate:1.500`)
+
+O fator do HX711 é calculado como `contagens brutas / peso conhecido`. Sem tara e calibração, a leitura não representa um peso confiável.
+O peso exibido usa média móvel de `40` amostras (`HX711_MOVING_AVG`), uma banda de estabilidade de `2 g` (`WEIGHT_DISPLAY_DEADBAND_G`) e zona morta de zero entre `-2 g` e `+2 g` (`WEIGHT_ZERO_DEADBAND_G`). Variações menores que 2 g não alteram o painel; a média acrescenta aproximadamente 4 segundos de resposta a 10 SPS.
+A tara coleta `10` amostras e normalmente inicia/conclui em aproximadamente 1 segundo.
+
+Se a leitura continuar variando vários gramas com a mesma massa, verifique se a célula está rigidamente fixada, se a plataforma não encosta na estrutura, se nenhum cabo força a célula e se o HX711 recebe 5V com GND comum. A média não corrige problemas mecânicos ou elétricos.
+
+### Diagnóstico rápido
+
+- No boot, o monitor serial deve mostrar `OLED: OK`.
+- A OLED deve estar em SDA=21/SCL=19.
+- Se a tela apagar após um período sem interação, confirme `OLED_SCREEN_TIMEOUT`; o padrão do protótipo é `0` (sem desligamento automático).
 
 ## WebSocket API
 
@@ -386,10 +410,11 @@ Conecte em `ws://<ip>:81/` e envie:
 | Comando | Ação |
 |---------|------|
 | `tare` | Executa tara |
+| `record` | Registra a medição estável no histórico |
+| `next_page` | Alterna entre peso, histórico e bateria |
 | `calibrate:<peso>` | Calibra com peso conhecido |
 | `factor:<valor>` | Define fator manualmente |
 | `reset` | Reset calibração |
-| `toggle_autosave` | Liga/desliga auto-save |
 | `clear_history` | Limpa histórico |
 
 Resposta (JSON):
@@ -399,10 +424,9 @@ Resposta (JSON):
   "weight": 1.234,
   "tareInProgress": false,
   "tareSamples": 0,
-  "tareTotal": 30,
+  "tareTotal": 10,
   "factor": 420.00,
   "offset": 123456,
-  "autoSave": true,
   "historyCount": 10,
   "wifiConnected": true,
   "apActive": true,
@@ -457,7 +481,7 @@ Causa mais comum: partição de 8MB configurada em chip de 4MB. Verifique no `pl
 ### OLED não detectado
 
 1. Verifique a conexão I2C (SDA=21, SCL=19)
-2. Endereço I2C: `0x3C` (pode ser `0x3D` em alguns módulos)
+2. Verifique SDA=21 e SCL=19 no I2C hardware
 3. Alimentação: 3.3V (não 5V)
 
 ### Não carrega via USB-C
