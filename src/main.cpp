@@ -10,6 +10,9 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include <Update.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "config.h"
 
 // ============================================================
@@ -57,6 +60,10 @@ bool wifiConnected = false;
 bool apModeActive = false;
 unsigned long wifiStartAttempt = 0;
 
+// Mutexes para seguranca entre cores (sensor/core0 x rede/core1)
+SemaphoreHandle_t stateMutex = nullptr;   // estado compartilhado lido pela telemetria
+SemaphoreHandle_t displayMutex = nullptr; // acesso ao barramento I2C / u8g2
+
 // Battery state
 float batteryVoltage = 0.0f;
 int batteryPercent = 0;
@@ -73,7 +80,9 @@ U8G2 *createOLED(uint8_t address, const char *name);
 bool anyOLEDReady();
 void setOLEDsPowerSave(bool enabled);
 void initWiFi();
+void startAP();
 void initWebServer();
+void sensorTask(void *pvParameters);
 void handleButtonA(ButtonState &btn);
 void handleButtonB(ButtonState &btn);
 void performTare();
@@ -90,6 +99,7 @@ void updateOLED();
 void showWeightPage();
 void showHistoryPage();
 void showBatteryPage();
+void showNetworkPage();
 void wakeOLEDs();
 void broadcastTelemetry();
 void wsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length);
@@ -141,44 +151,77 @@ void setup() {
     initWiFi();
     initWebServer();
 
+    // Mutexes para acesso seguro entre o core de sensores e o core de rede
+    stateMutex = xSemaphoreCreateMutex();
+    displayMutex = xSemaphoreCreateMutex();
+
+    // Tarefa de sensores/display no core 0 (tempo real); o loop() (core 1) fica com a rede
+    xTaskCreatePinnedToCore(sensorTask, "sensor", 6144, NULL, 2, NULL, 0);
+
     Serial.println("=== READY ===");
     Serial.printf("Heap: %u\n", ESP.getFreeHeap());
 }
 
 // ============================================================
-// LOOP
+// SENSOR TASK (core 0) - balanca + display com prioridade
+// ============================================================
+void sensorTask(void *pvParameters) {
+    for (;;) {
+        unsigned long now = millis();
+
+        if (hx711Ready && scale && scale->is_ready() && !tareInProgress) {
+            updateDisplayedWeight(readFilteredWeight());
+        }
+
+        // Read battery voltage periodically
+        if ((now - lastBatteryRead) > BATTERY_READ_INTERVAL) {
+            readBatteryVoltage();
+            lastBatteryRead = now;
+        }
+
+        handleButtonA(btnA);
+        handleButtonB(btnB);
+
+        if (anyOLEDReady() && (now - lastOledUpdate) > OLED_UPDATE_INTERVAL) {
+            updateOLED();
+            lastOledUpdate = now;
+        }
+
+        if (anyOLEDReady() && OLED_SCREEN_TIMEOUT > 0 && !screenSleeping &&
+            (now - lastScreenActivity) > OLED_SCREEN_TIMEOUT) {
+            setOLEDsPowerSave(true);
+            screenSleeping = true;
+        }
+
+        vTaskDelay(1);
+    }
+}
+
+// ============================================================
+// LOOP (core 1) - apenas rede/WiFi/WebSocket
 // ============================================================
 void loop() {
     unsigned long now = millis();
 
-    if (hx711Ready && scale && scale->is_ready() && !tareInProgress) {
-        updateDisplayedWeight(readFilteredWeight());
+    // Atualiza estado da STA quando conecta (modo async)
+    if (WIFI_STA_ENABLED && !apModeActive && !wifiConnected &&
+        WiFi.status() == WL_CONNECTED) {
+        wifiConnected = true;
+        Serial.printf("STA OK @ %s (RSSI: %d)\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
     }
 
-    // Read battery voltage periodically
-    if ((now - lastBatteryRead) > BATTERY_READ_INTERVAL) {
-        readBatteryVoltage();
-        lastBatteryRead = now;
+    // Monitora STA: se caiu a conexao, marca desconectado
+    if (WIFI_STA_ENABLED && !apModeActive && wifiConnected &&
+        WiFi.status() != WL_CONNECTED) {
+        wifiConnected = false;
+        wifiStartAttempt = now;
+        Serial.println("STA disconnected");
     }
 
-    handleButtonA(btnA);
-    handleButtonB(btnB);
-
-    if (anyOLEDReady() && (now - lastOledUpdate) > OLED_UPDATE_INTERVAL) {
-        updateOLED();
-        lastOledUpdate = now;
-    }
-
-    if (anyOLEDReady() && OLED_SCREEN_TIMEOUT > 0 && !screenSleeping &&
-        (now - lastScreenActivity) > OLED_SCREEN_TIMEOUT) {
-        setOLEDsPowerSave(true);
-        screenSleeping = true;
-    }
-
+    // Fallback: se nao esta conectado via STA e nao tem AP, sobe o AP proprio
     if (WIFI_AP_FALLBACK && !wifiConnected && !apModeActive &&
         (now - wifiStartAttempt) > WIFI_AP_FALLBACK_DELAY) {
-        WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD, WIFI_AP_CHANNEL, 0, WIFI_AP_MAX_CONN);
-        apModeActive = true;
+        startAP();
         Serial.printf("AP Fallback: %s\n", WiFi.softAPIP().toString().c_str());
     }
 
@@ -250,51 +293,37 @@ bool anyOLEDReady() {
 }
 
 void setOLEDsPowerSave(bool enabled) {
+    if (displayMutex) xSemaphoreTake(displayMutex, portMAX_DELAY);
     if (oledReady) u8g2->setPowerSave(enabled);
+    if (displayMutex) xSemaphoreGive(displayMutex);
 }
 
 void initWiFi() {
     WiFi.setHostname(HOSTNAME);
-    WiFi.mode(WIFI_MODE_APSTA);
+    apModeActive = false;
+    wifiConnected = false;
 
-    // Scan para debug
-    Serial.println("\nScanning WiFi networks...");
-    int n = WiFi.scanNetworks();
-    if (n == 0) {
-        Serial.println("  No networks found!");
-    } else {
-        for (int i = 0; i < n; i++) {
-            Serial.printf("  [%d] %s (ch:%d, RSSI:%d, enc:%d)\n",
-                i+1, WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i), WiFi.encryptionType(i));
-        }
+    if (!WIFI_STA_ENABLED) {
+        startAP();
+        return;
     }
-    WiFi.scanDelete();
 
+    // Modo STA para tentar conectar no AP configurado primeiro (NAO bloqueia o boot)
+    WiFi.mode(WIFI_MODE_STA);
+    WiFi.disconnect();
+    delay(100);
+    WiFi.begin(WIFI_STA_SSID, WIFI_STA_PASSWORD);
+    wifiStartAttempt = millis();
+    Serial.printf("STA: Connecting to '%s' (async)...\n", WIFI_STA_SSID);
+    // O resultado da conexao e o fallback para AP sao tratados no loop/monitor.
+}
+
+void startAP() {
+    if (apModeActive) return;
+    WiFi.mode(WIFI_MODE_APSTA);
     WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD, WIFI_AP_CHANNEL, 0, WIFI_AP_MAX_CONN);
     apModeActive = true;
     Serial.printf("AP: %s @ %s\n", WIFI_AP_SSID, WiFi.softAPIP().toString().c_str());
-
-    if (WIFI_STA_ENABLED) {
-        WiFi.disconnect();
-        delay(100);
-        WiFi.begin(WIFI_STA_SSID, WIFI_STA_PASSWORD);
-        wifiStartAttempt = millis();
-        Serial.printf("\nSTA: Connecting to '%s'...", WIFI_STA_SSID);
-
-        unsigned long t = millis();
-        while (WiFi.status() != WL_CONNECTED && millis() - t < WIFI_STA_TIMEOUT) {
-            delay(500);
-            Serial.print(".");
-        }
-
-        if (WiFi.status() == WL_CONNECTED) {
-            wifiConnected = true;
-            Serial.printf("\n STA OK @ %s (RSSI: %d)\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
-        } else {
-            Serial.printf("\n STA FAIL (status=%d)\n", WiFi.status());
-            Serial.println(" Check: SSID, password, router channel (1-11), WPA2 only");
-        }
-    }
 }
 
 void initWebServer() {
@@ -436,11 +465,10 @@ void handleButtonA(ButtonState &btn) {
     }
     if (btn.lastState == LOW && now - btn.pressStart > BUTTON_A_LONG_PRESS && !btn.longPressed) {
         btn.longPressed = true;
-        Serial.println("BtnA long: tare");
+        Serial.println("BtnA long: clear history");
         wakeOLEDs();
-        performTare();
+        clearHistory();
         wakeOLEDs();
-        updateOLED();
     }
 }
 
@@ -464,9 +492,11 @@ void handleButtonB(ButtonState &btn) {
     }
     if (btn.lastState == LOW && now - btn.pressStart > BUTTON_B_LONG_PRESS && !btn.longPressed) {
         btn.longPressed = true;
-        Serial.println("BtnB long: clear history");
-        clearHistory();
-        lastScreenActivity = now;
+        Serial.println("BtnB long: tare");
+        wakeOLEDs();
+        performTare();
+        wakeOLEDs();
+        updateOLED();
     }
 }
 
@@ -487,7 +517,10 @@ void performTare() {
         sum += scale->read(); tareSamplesCollected = i + 1; delay(100);
     }
     if (tareSamplesCollected > 0) {
-        tareOffset = sum / tareSamplesCollected;
+        long newOffset = sum / tareSamplesCollected;
+        if (stateMutex) xSemaphoreTake(stateMutex, portMAX_DELAY);
+        tareOffset = newOffset;
+        if (stateMutex) xSemaphoreGive(stateMutex);
         scale->set_offset(tareOffset); prefs->putLong(PREF_OFFSET_KEY, tareOffset);
     }
     tareInProgress = false;
@@ -496,7 +529,10 @@ void performTare() {
 }
 
 void resetCalibration() {
-    calibrationFactor = HX711_DEFAULT_FACTOR; tareOffset = HX711_DEFAULT_OFFSET;
+    float f = HX711_DEFAULT_FACTOR; long o = HX711_DEFAULT_OFFSET;
+    if (stateMutex) xSemaphoreTake(stateMutex, portMAX_DELAY);
+    calibrationFactor = f; tareOffset = o;
+    if (stateMutex) xSemaphoreGive(stateMutex);
     if (scale) { scale->set_scale(calibrationFactor); scale->set_offset(tareOffset); }
     resetWeightFilter();
     prefs->putFloat(PREF_FACTOR_KEY, calibrationFactor);
@@ -505,10 +541,12 @@ void resetCalibration() {
 }
 
 void saveWeightToHistory(float weight) {
+    if (stateMutex) xSemaphoreTake(stateMutex, portMAX_DELAY);
     weightHistory[historyIndex].weight = weight;
     weightHistory[historyIndex].timestamp = millis();
     historyIndex = (historyIndex + 1) % WEIGHT_HISTORY_MAX;
     if (historyCount < WEIGHT_HISTORY_MAX) historyCount++;
+    if (stateMutex) xSemaphoreGive(stateMutex);
 }
 
 void recordMeasurement() {
@@ -516,39 +554,53 @@ void recordMeasurement() {
         Serial.println("Measurement ignored: weight not ready");
         return;
     }
-    saveWeightToHistory(currentWeight);
-    Serial.printf("Measurement recorded: %ld g\n", weightToGrams(currentWeight));
+    float w;
+    if (stateMutex) xSemaphoreTake(stateMutex, portMAX_DELAY);
+    w = currentWeight;
     oledPage = OLED_PAGE_HISTORY;
+    if (stateMutex) xSemaphoreGive(stateMutex);
+    saveWeightToHistory(w);
+    Serial.printf("Measurement recorded: %ld g\n", weightToGrams(w));
     wakeOLEDs();
     updateOLED();
 }
 
 void clearHistory() {
+    if (stateMutex) xSemaphoreTake(stateMutex, portMAX_DELAY);
     historyCount = 0;
     historyIndex = 0;
     oledPage = OLED_PAGE_HISTORY;
+    if (stateMutex) xSemaphoreGive(stateMutex);
     wakeOLEDs();
     updateOLED();
 }
 
 void cycleOLEDPage() {
+    if (stateMutex) xSemaphoreTake(stateMutex, portMAX_DELAY);
     oledPage = (oledPage + 1) % OLED_PAGE_MAX;
+    if (stateMutex) xSemaphoreGive(stateMutex);
     Serial.printf("OLED page: %d\n", oledPage);
     wakeOLEDs();
     updateOLED();
 }
 
 void resetWeightFilter() {
+    if (stateMutex) xSemaphoreTake(stateMutex, portMAX_DELAY);
     for (int i = 0; i < HX711_MOVING_AVG; i++) weightFilter[i] = 0.0f;
     weightFilterCount = 0;
     weightFilterIndex = 0;
     weightFilterSum = 0.0f;
     currentWeight = 0.0f;
     weightDisplayInitialized = false;
+    if (stateMutex) xSemaphoreGive(stateMutex);
 }
 
 float readFilteredWeight() {
-    float sample = (scale->read() - tareOffset) / calibrationFactor;
+    long raw = scale->read();
+    float sample;
+    if (stateMutex) xSemaphoreTake(stateMutex, portMAX_DELAY);
+    sample = (raw - tareOffset) / calibrationFactor;
+    if (stateMutex) xSemaphoreGive(stateMutex);
     if (weightFilterCount == HX711_MOVING_AVG) {
         weightFilterSum -= weightFilter[weightFilterIndex];
     } else {
@@ -566,8 +618,10 @@ void updateDisplayedWeight(float measuredWeight) {
     }
     float differenceGrams = fabsf(measuredWeight - currentWeight) * 1000.0f;
     if (!weightDisplayInitialized || differenceGrams >= WEIGHT_DISPLAY_DEADBAND_G) {
+        if (stateMutex) xSemaphoreTake(stateMutex, portMAX_DELAY);
         currentWeight = measuredWeight;
         weightDisplayInitialized = true;
+        if (stateMutex) xSemaphoreGive(stateMutex);
     }
 }
 
@@ -581,7 +635,7 @@ long weightToGrams(float weight) {
 float adcToVoltage(int adcValue) {
     float adcVoltage = (adcValue / 4095.0f) * 3.3f;
     float dividerRatio = (float)(BATTERY_DIVIDER_R1 + BATTERY_DIVIDER_R2) / BATTERY_DIVIDER_R2;
-    return adcVoltage * dividerRatio;
+    return adcVoltage * dividerRatio * BATTERY_CAL;
 }
 
 int voltageToPercent(float voltage) {
@@ -610,13 +664,16 @@ void readBatteryVoltage() {
 void updateOLED() {
     if (!anyOLEDReady() || screenSleeping) return;
     setOLEDsPowerSave(false); screenSleeping = false;
+    if (displayMutex) xSemaphoreTake(displayMutex, portMAX_DELAY);
     if (oledReady) {
         switch (oledPage) {
             case OLED_PAGE_WEIGHT: showWeightPage(); break;
             case OLED_PAGE_HISTORY: showHistoryPage(); break;
             case OLED_PAGE_BATTERY: showBatteryPage(); break;
+        case OLED_PAGE_NETWORK: showNetworkPage(); break;
         }
     }
+    if (displayMutex) xSemaphoreGive(displayMutex);
 }
 
 void showWeightPage() {
@@ -673,6 +730,32 @@ void showBatteryPage() {
     } while (u8g2->nextPage());
 }
 
+void showNetworkPage() {
+    u8g2->firstPage();
+    do {
+        // Header (faixa amarela, y <= 16)
+        u8g2->setFont(u8g2_font_6x10_tr);
+        String mode;
+        if (wifiConnected && !apModeActive) mode = "STA";
+        else if (apModeActive && !wifiConnected) mode = "AP";
+        else if (apModeActive && wifiConnected) mode = "STA+AP";
+        else mode = "---";
+        u8g2->drawUTF8(0, 9, ("REDE   MODO: " + mode).c_str());
+
+        // Area azul: 2 linhas com fonte maior
+        u8g2->setFont(u8g2_font_7x13_tr);
+        if (wifiConnected) {
+            u8g2->drawUTF8(0, 32, WiFi.SSID().c_str());
+            u8g2->drawUTF8(0, 52, ("IP: " + WiFi.localIP().toString()).c_str());
+        } else if (apModeActive) {
+            u8g2->drawUTF8(0, 32, WIFI_AP_SSID);
+            u8g2->drawUTF8(0, 52, ("IP: " + WiFi.softAPIP().toString()).c_str());
+        } else {
+            u8g2->drawUTF8(0, 32, "Conectando...");
+        }
+    } while (u8g2->nextPage());
+}
+
 void wakeOLEDs() {
     if (!anyOLEDReady()) return;
     setOLEDsPowerSave(false);
@@ -693,9 +776,9 @@ void wsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
         else if (msg == "next_page") cycleOLEDPage();
         else if (msg.startsWith("calibrate:") && hx711Ready) {
             float w = msg.substring(10).toFloat();
-            if (w > 0) { long d = scale->read_average(10) - tareOffset; if (d) { calibrationFactor = (float)d / w; scale->set_scale(calibrationFactor); resetWeightFilter(); prefs->putFloat(PREF_FACTOR_KEY, calibrationFactor); } }
+            if (w > 0) { long d = scale->read_average(10) - tareOffset; if (d) { float f = (float)d / w; if (stateMutex) xSemaphoreTake(stateMutex, portMAX_DELAY); calibrationFactor = f; if (stateMutex) xSemaphoreGive(stateMutex); scale->set_scale(calibrationFactor); resetWeightFilter(); prefs->putFloat(PREF_FACTOR_KEY, calibrationFactor); } }
         }
-        else if (msg.startsWith("factor:")) { float f = msg.substring(7).toFloat(); if (f > 0) { calibrationFactor = f; scale->set_scale(calibrationFactor); resetWeightFilter(); prefs->putFloat(PREF_FACTOR_KEY, calibrationFactor); } }
+        else if (msg.startsWith("factor:")) { float f = msg.substring(7).toFloat(); if (f > 0) { if (stateMutex) xSemaphoreTake(stateMutex, portMAX_DELAY); calibrationFactor = f; if (stateMutex) xSemaphoreGive(stateMutex); scale->set_scale(calibrationFactor); resetWeightFilter(); prefs->putFloat(PREF_FACTOR_KEY, calibrationFactor); } }
         else if (msg == "reset") resetCalibration();
         else if (msg == "clear_history") clearHistory();
     }
@@ -706,23 +789,43 @@ void wsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
 // ============================================================
 void broadcastTelemetry() {
     if (!wsServer) return;
+
+    // Snapshot do estado compartilhado (protegido contra o core de sensores)
+    float snapWeight = 0, snapFactor = 0, snapOffset = 0, snapBattV = 0;
+    int snapTareSamples = 0, snapHistoryCount = 0, snapBattPct = 0;
+    bool snapTare = false, snapWifi = false, snapAp = false;
+    WeightEntry snapHistory[WEIGHT_HISTORY_MAX];
+    if (stateMutex) xSemaphoreTake(stateMutex, portMAX_DELAY);
+    snapWeight = currentWeight;
+    snapTare = tareInProgress;
+    snapTareSamples = tareSamplesCollected;
+    snapFactor = calibrationFactor;
+    snapOffset = (float)tareOffset;
+    snapHistoryCount = historyCount;
+    snapBattV = batteryVoltage;
+    snapBattPct = batteryPercent;
+    snapWifi = wifiConnected;
+    snapAp = apModeActive;
+    for (int i = 0; i < historyCount; i++) snapHistory[i] = weightHistory[i];
+    if (stateMutex) xSemaphoreGive(stateMutex);
+
     JsonDocument doc;
-    doc["weight"] = currentWeight;
-    doc["tareInProgress"] = tareInProgress;
-    doc["tareSamples"] = tareSamplesCollected;
+    doc["weight"] = snapWeight;
+    doc["tareInProgress"] = snapTare;
+    doc["tareSamples"] = snapTareSamples;
     doc["tareTotal"] = HX711_TARE_SAMPLES;
-    doc["factor"] = calibrationFactor;
-    doc["offset"] = tareOffset;
-    doc["historyCount"] = historyCount;
-    doc["wifiConnected"] = wifiConnected;
-    doc["apActive"] = apModeActive;
-    doc["staIP"] = wifiConnected ? WiFi.localIP().toString() : "";
+    doc["factor"] = snapFactor;
+    doc["offset"] = snapOffset;
+    doc["historyCount"] = snapHistoryCount;
+    doc["wifiConnected"] = snapWifi;
+    doc["apActive"] = snapAp;
+    doc["staIP"] = snapWifi ? WiFi.localIP().toString() : "";
     doc["apIP"] = WiFi.softAPIP().toString();
-    doc["batteryVoltage"] = batteryVoltage;
-    doc["batteryPercent"] = batteryPercent;
+    doc["batteryVoltage"] = snapBattV;
+    doc["batteryPercent"] = snapBattPct;
     JsonArray h = doc["history"].to<JsonArray>();
-    for (int i = max(0, historyCount - 10); i < historyCount; i++) {
-        JsonObject e = h.add<JsonObject>(); e["weight"] = weightHistory[i].weight; e["time"] = weightHistory[i].timestamp;
+    for (int i = max(0, snapHistoryCount - 10); i < snapHistoryCount; i++) {
+        JsonObject e = h.add<JsonObject>(); e["weight"] = snapHistory[i].weight; e["time"] = snapHistory[i].timestamp;
     }
     String out; serializeJson(doc, out);
     wsServer->broadcastTXT(out);

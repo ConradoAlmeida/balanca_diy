@@ -1,0 +1,7 @@
+aumentar diametro furos para push buttons
+aumentar largura para encaixe da chave liga-desliga
+diminuir (muito pouco) a plate do painel frontal
+diminuir ou remover o ressalto na carcaça
+versão para células de carga comercial
+led para ver se está ligado ou não
+

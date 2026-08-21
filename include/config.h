@@ -29,6 +29,7 @@
 #define BATTERY_EMPTY_VOLT  3.0f    // Voltage at 0%
 #define BATTERY_LOW_VOLT    3.3f    // Visual low-battery alarm threshold
 #define BATTERY_READ_INTERVAL 5000  // ms between battery readings
+#define BATTERY_CAL         1.074f  // Fator de calibracao do ADC (real / reportado). Ex: 4.19/3.90 = 1.074
 
 // ============================================================
 // WiFi Configuration
@@ -87,7 +88,8 @@
 #define OLED_PAGE_WEIGHT      0
 #define OLED_PAGE_HISTORY     1
 #define OLED_PAGE_BATTERY     2
-#define OLED_PAGE_MAX         3
+#define OLED_PAGE_NETWORK     3
+#define OLED_PAGE_MAX         4
 
 // ============================================================
 // Button Configuration
@@ -97,11 +99,12 @@
 #define BUTTON_B_LONG_PRESS   2000   // ms before Button B clears history
 
 // Button A actions
-// Short press: Tare the scale
-// Long press: Tare the scale
+// Short press: Record measurement to history
+// Long press:  Clear history
 
 // Button B actions
-// Short press: Cycle OLED pages (weight, history, battery)
+// Short press: Cycle OLED pages (weight, history, battery, network)
+// Long press:  Tare the scale
 
 // ============================================================
 // Persistent Storage (Preferences)
