@@ -146,6 +146,11 @@ void setup() {
 
     initHX711();
     initOLED();
+    // A plataforma deve estar vazia: substitui o offset salvo pela tara atual.
+    if (hx711Ready) {
+        Serial.println("Tara automatica ao ligar...");
+        performTare();
+    }
     readBatteryVoltage();
     lastBatteryRead = millis();
     initWiFi();

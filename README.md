@@ -6,6 +6,7 @@ Balança digital baseada em ESP32 DevKit V4 com célula de carga HX711, tela OLE
 
 - **Pesagem em tempo real** com filtro de média móvel
 - **Tara** por pressão longa no botão A, com indicação no OLED e na web
+- **Tara automática ao ligar** usando a média de amostras do HX711
 - **Histórico de pesos** registrado manualmente pelo clique curto do botão A
 - **Calibração** via web ou botão físico
 - **Tela OLED 0.96"** com páginas de peso, histórico e bateria
@@ -80,6 +81,7 @@ OLED Module (4 pinos, endereço 0x3C)
 
 **Notas:**
 - O botão B alterna entre peso, histórico e bateria na mesma tela.
+- Ao ligar, mantenha a plataforma vazia para que a tara automática seja correta.
 - O clique curto do botão A registra a medição estável no histórico.
 - Alimente a tela pelo 3.3V do ESP32.
 - Se a tela não for detectada, verifique SDA=21, SCL=19 e a alimentação de 3.3V.

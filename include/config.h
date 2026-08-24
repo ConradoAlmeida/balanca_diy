@@ -67,7 +67,7 @@
 #define HX711_SAMPLE_RATE   8     // samples per second for display
 #define HX711_TARE_SAMPLES  30     // number of samples for tare (~1 s at 10 SPS)
 #define HX711_MOVING_AVG    30     // moving average window (~4 s at 10 SPS)
-#define WEIGHT_DISPLAY_DEADBAND_G 2.0f // Ignore display changes smaller than 2 g
+#define WEIGHT_DISPLAY_DEADBAND_G 1.0f // Ignore display changes smaller than 2 g
 #define WEIGHT_ZERO_DEADBAND_G 2.0f // Show zero between -2 g and +2 g
 
 // Default calibration (must be calibrated for your load cell)
@@ -75,7 +75,7 @@
 #define HX711_DEFAULT_OFFSET  0L
 
 // Weight history
-#define WEIGHT_HISTORY_MAX    50   // max entries in weight history
+#define WEIGHT_HISTORY_MAX    4   // max entries in weight history
 
 // ============================================================
 // OLED Display
