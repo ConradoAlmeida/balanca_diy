@@ -643,10 +643,50 @@ float adcToVoltage(int adcValue) {
     return adcVoltage * dividerRatio * BATTERY_CAL;
 }
 
+// Curva tipica Li-ion 1S (Silicon Lightworks): platô ~3,65–3,75 V (20–80%),
+// queda rapida no topo e no "joelho" abaixo de 20%. Piso em 3,0 V (0%) — IP5306
+// desliga o boost perto disso; nada abaixo de 3,0 V.
+struct BatteryCurvePoint {
+    float voltage;
+    int percent;
+};
+
+static const BatteryCurvePoint BATTERY_CURVE[] = {
+    {3.00f,   0},
+    {3.20f,   5},
+    {3.35f,  10},
+    {3.50f,  15},
+    {3.65f,  20},
+    {3.67f,  25},
+    {3.68f,  30},
+    {3.69f,  35},
+    {3.70f,  40},
+    {3.71f,  45},
+    {3.72f,  50},
+    {3.73f,  55},
+    {3.74f,  60},
+    {3.75f,  70},
+    {3.80f,  80},
+    {3.85f,  90},
+    {4.00f,  95},
+    {4.20f, 100},
+};
+
 int voltageToPercent(float voltage) {
-    if (voltage >= BATTERY_FULL_VOLT) return 100;
-    if (voltage <= BATTERY_EMPTY_VOLT) return 0;
-    return (int)((voltage - BATTERY_EMPTY_VOLT) / (BATTERY_FULL_VOLT - BATTERY_EMPTY_VOLT) * 100.0f);
+    if (voltage <= 3.0f) return 0;
+
+    const size_t count = sizeof(BATTERY_CURVE) / sizeof(BATTERY_CURVE[0]);
+    if (voltage >= BATTERY_CURVE[count - 1].voltage) return 100;
+
+    for (size_t i = 0; i < count - 1; i++) {
+        const BatteryCurvePoint &lo = BATTERY_CURVE[i];
+        const BatteryCurvePoint &hi = BATTERY_CURVE[i + 1];
+        if (voltage <= hi.voltage) {
+            float ratio = (voltage - lo.voltage) / (hi.voltage - lo.voltage);
+            return lo.percent + (int)(ratio * (hi.percent - lo.percent) + 0.5f);
+        }
+    }
+    return 100;
 }
 
 void readBatteryVoltage() {

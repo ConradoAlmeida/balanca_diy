@@ -103,6 +103,62 @@ Bateria (+) ────[R1: 100kΩ]────┬──── GPIO 34 (ESP32)
 
 **Conexão:** Ligue o divisor diretamente no terminal positivo da bateria (ou pino `BAT+` do IP5306) e o GND comum.
 
+### Curva de percentual da bateria
+
+O percentual exibido (OLED e web) segue a **curva típica de descarga Li-ion 1S**, baseada no perfil Silicon Lightworks: platô longo entre ~20% e ~80% (3,65–3,75 V), queda rápida no topo e no “joelho” abaixo de 20%.
+
+**Regras:**
+- Tensão **≥ 4,20 V** → **100%**
+- Tensão **≤ 3,00 V** → **0%** (clamp; IP5306 perto de desligar o boost)
+- Entre dois degraus → **interpolação linear**
+- Calibração ADC: `BATTERY_CAL` em `config.h` (ajusta tensão medida, não o %)
+- Alarme visual de bateria baixa: **≤ 3,30 V** (`BATTERY_LOW_VOLT`, ~8%)
+
+**Tabela de degraus** (`BATTERY_CURVE` em `src/main.cpp`):
+
+| Tensão (V) | % |
+|------------|---|
+| ≤ 3,00 | 0 |
+| 3,00 | 0 |
+| 3,20 | 5 |
+| 3,35 | 10 |
+| 3,50 | 15 |
+| 3,65 | 20 |
+| 3,67 | 25 |
+| 3,68 | 30 |
+| 3,69 | 35 |
+| 3,70 | 40 |
+| 3,71 | 45 |
+| 3,72 | 50 |
+| 3,73 | 55 |
+| 3,74 | 60 |
+| 3,75 | 70 |
+| 3,80 | 80 |
+| 3,85 | 90 |
+| 4,00 | 95 |
+| 4,20 | 100 |
+| ≥ 4,20 | 100 |
+
+**Exemplos interpolados:**
+
+| Tensão (V) | % aprox. |
+|------------|----------|
+| 4,19 | 99 |
+| 3,72 | 50 |
+| 3,30 | 8 |
+| 3,00 | 0 |
+
+**Regiões da curva:**
+
+| Faixa | Tensão | Comportamento |
+|-------|--------|---------------|
+| Topo | 4,00–4,20 V | Queda rápida (95→100%) |
+| Platô | 3,65–3,75 V | ~20–70%; tensão quase estável |
+| Joelho | 3,20–3,50 V | Queda acelerada (5→15%) |
+| Piso | ≤ 3,00 V | Sempre 0% |
+
+**Nota:** o IP5306 desliga a saída 5V por proteção quando a célula cai para ~2,8–2,9 V. O piso em 3,0 V = 0% reflete o limite prático de uso, não o esgotamento químico da célula (~2,2 V).
+
 #### Botões Push Button
 
 ```
@@ -147,7 +203,9 @@ Bateria 18650 (1S)
 - **Battery:** 1S Li-ion (3.7V nominal, 4.2V full charge)
 - **Output:** 5V boost, até 2.4A
 - **Carga:** Até 2A, com proteção contra sobrecarga e descarga profunda
-- **LEDs:** 4 LEDs indicam nível da bateria (25%, 50%, 75%, 100%)
+- **LEDs:** 4 LEDs indicam nível da bateria (25%, 50%, 75%, 100%) — acendem acima de ~3.36 / 3.57 / 3.65 / 3.91 V
+- **Proteção de descarga:** o IP5306 desliga a saída 5V quando a célula cai para ~**2,8–2,9 V** (proteção interna do chip). Na prática, com queda de tensão nos fios, o corte pode ocorrer um pouco antes (~3,0–3,2 V medidos na célula)
+- **Recarga automática:** reinicia carga quando a bateria cai abaixo de ~4,1 V
 - **Botão:** Pressione para verificar nível ou ligar/desligar a saída
 
 **Resistores CC (5.1kΩ) — Obrigatório:**
@@ -289,7 +347,7 @@ As bibliotecas `ESPAsyncWebServer` + `AsyncTCP` causam **boot loop** (`rst:0x3 S
 | Bateria | Tensão, percentual e alarme visual de bateria baixa |
 
 A OLED usa o endereço `0x3C` no I2C hardware. O botão B alterna as três páginas na mesma tela.
-O alarme de bateria baixa é visual e é acionado quando a tensão medida fica em `3.3V` ou menos; o projeto não possui buzzer.
+O alarme de bateria baixa é visual e é acionado quando a tensão medida fica em `3.3V` ou menos (~8% na curva); o projeto não possui buzzer. Ver [Curva de percentual da bateria](#curva-de-percentual-da-bateria) para a tabela completa.
 
 ## WiFi
 
@@ -367,9 +425,9 @@ Edite `include/config.h` para ajustar:
 
 // Calibração padrão
 #define HX711_DEFAULT_FACTOR  420.0f
-#define HX711_TARE_SAMPLES    10
-#define HX711_MOVING_AVG      40
-#define WEIGHT_DISPLAY_DEADBAND_G 2.0f
+#define HX711_TARE_SAMPLES    30
+#define HX711_MOVING_AVG      15
+#define WEIGHT_DISPLAY_DEADBAND_G 1.0f
 #define WEIGHT_ZERO_DEADBAND_G 2.0f
 
 // Pins
@@ -394,8 +452,8 @@ Edite `include/config.h` para ajustar:
 Ou via WebSocket: envie `calibrate:<peso>` (ex: `calibrate:1.500`)
 
 O fator do HX711 é calculado como `contagens brutas / peso conhecido`. Sem tara e calibração, a leitura não representa um peso confiável.
-O peso exibido usa média móvel de `40` amostras (`HX711_MOVING_AVG`), uma banda de estabilidade de `2 g` (`WEIGHT_DISPLAY_DEADBAND_G`) e zona morta de zero entre `-2 g` e `+2 g` (`WEIGHT_ZERO_DEADBAND_G`). Variações menores que 2 g não alteram o painel; a média acrescenta aproximadamente 4 segundos de resposta a 10 SPS.
-A tara coleta `10` amostras e normalmente inicia/conclui em aproximadamente 1 segundo.
+O peso exibido usa média móvel de `15` amostras (`HX711_MOVING_AVG`), uma banda de estabilidade de `1 g` (`WEIGHT_DISPLAY_DEADBAND_G`) e zona morta de zero entre `-2 g` e `+2 g` (`WEIGHT_ZERO_DEADBAND_G`). Variações menores que 1 g não alteram o painel; a média acrescenta aproximadamente 1,5 segundo de resposta a 10 SPS.
+A tara coleta `30` amostras e normalmente inicia/conclui em aproximadamente 3 segundos.
 
 Se a leitura continuar variando vários gramas com a mesma massa, verifique se a célula está rigidamente fixada, se a plataforma não encosta na estrutura, se nenhum cabo força a célula e se o HX711 recebe 5V com GND comum. A média não corrige problemas mecânicos ou elétricos.
 

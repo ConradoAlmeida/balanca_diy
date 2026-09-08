@@ -25,11 +25,9 @@
 #define BATTERY_DIVIDER_R1  100000  // R1 (top resistor, ohms)
 #define BATTERY_DIVIDER_R2  100000  // R2 (bottom resistor, ohms)
 #define BATTERY_SAMPLES     20      // ADC samples for averaging
-#define BATTERY_FULL_VOLT   4.2f    // Voltage at 100%
-#define BATTERY_EMPTY_VOLT  3.0f    // Voltage at 0%
-#define BATTERY_LOW_VOLT    3.3f    // Visual low-battery alarm threshold
+#define BATTERY_LOW_VOLT    3.3f    // Visual low-battery alarm threshold (~10% na curva)
 #define BATTERY_READ_INTERVAL 5000  // ms between battery readings
-#define BATTERY_CAL         1.074f  // Fator de calibracao do ADC (real / reportado). Ex: 4.19/3.90 = 1.074
+#define BATTERY_CAL         1.049f  // Fator de calibracao do ADC (real / reportado). Ex: 4.19/4.29 ajustado de 1.074
 
 // ============================================================
 // WiFi Configuration
@@ -64,10 +62,9 @@
 // Scale (HX711) Configuration
 // ============================================================
 #define HX711_GAIN          128
-#define HX711_SAMPLE_RATE   8     // samples per second for display
-#define HX711_TARE_SAMPLES  30     // number of samples for tare (~1 s at 10 SPS)
-#define HX711_MOVING_AVG    30     // moving average window (~4 s at 10 SPS)
-#define WEIGHT_DISPLAY_DEADBAND_G 1.0f // Ignore display changes smaller than 2 g
+#define HX711_TARE_SAMPLES  30     // number of samples for tare (~3 s at 10 SPS)
+#define HX711_MOVING_AVG    15     // moving average window (~1.5 s at 10 SPS)
+#define WEIGHT_DISPLAY_DEADBAND_G 1.0f // Ignore display changes smaller than 1 g
 #define WEIGHT_ZERO_DEADBAND_G 2.0f // Show zero between -2 g and +2 g
 
 // Default calibration (must be calibrated for your load cell)
