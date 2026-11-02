@@ -9,8 +9,8 @@ OLED SSD1306 e interface web via WebSocket. O mesmo firmware roda em ESP32
 DevKit V1/V4 com 4 MB de flash.
 
 O `README.md` é um índice. Leia o documento da área em `docs/` conforme a
-tarefa: `HARDWARE.md`, `BATERIA.md`, `FIRMWARE.md`, `INSTALACAO.md`, `WEB.md` ou
-`TROUBLESHOOTING.md`. Não carregue o README inteiro.
+tarefa: `HARDWARE.md`, `MECANICA.md`, `BATERIA.md`, `FIRMWARE.md`, `INSTALACAO.md`,
+`WEB.md` ou `TROUBLESHOOTING.md`. Não carregue o README inteiro.
 
 ## Comandos
 

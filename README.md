@@ -51,6 +51,7 @@ Após o primeiro upload via USB, atualize pelo browser em `http://<ip>/update`
 | Documento | Conteúdo |
 |---|---|
 | [Hardware](docs/HARDWARE.md) | Componentes, pinagem, wiring, OLED e diagrama |
+| [Mecânica](docs/MECANICA.md) | Projeto SolidWorks no NAS: SLDPRT, STEPs e como usar |
 | [Bateria](docs/BATERIA.md) | Curva de percentual, alarme e autonomia |
 | [Firmware](docs/FIRMWARE.md) | PlatformIO, bibliotecas, botões, WiFi, config e calibração |
 | [Instalação](docs/INSTALACAO.md) | Requisitos, build, upload e OTA |
